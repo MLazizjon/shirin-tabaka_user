@@ -2,11 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './CategoryDetail.css';
 
-// Mahsulotlar ma'lumotlarini alohida fayldan import qilamiz
-// Agar faylingiz nomi "mahsulot.js" bo'lsa: import products from './mahsulot';
-import products from '../data/mahsulot';
+// Supabase mijozini import qilamiz
+import { supabase } from '../supabase/supabesa'; 
 
-// Logo va boshqa umumiy rasmlar (keragiga qarab yo'lini to'g'rilang)
+// Logo rasmi
 import logoImg from '../assets/images/logo.png'; 
 
 const UI_TEXT = {
@@ -14,6 +13,8 @@ const UI_TEXT = {
   itemsCount: { uz: 'ta pozitsiya', ru: 'позиций', en: 'items' },
   currency: { uz: 'soʻm', ru: 'сум', en: 'UZS' },
   closeBtn: { uz: 'Yopish', ru: 'Закрыть', en: 'Close' },
+  loading: { uz: 'Yuklanmoqda...', ru: 'Загрузка...', en: 'Loading...' },
+  empty: { uz: "Bu kategoriyada hozircha mahsulotlar yo'q.", ru: 'В этой категории пока нет товаров.', en: 'No products in this category yet.' }
 };
 
 export default function CategoryDetail({
@@ -23,6 +24,7 @@ export default function CategoryDetail({
   onChangeLang,
 }) {
   const [productsList, setProductsList] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isLeaving, setIsLeaving] = useState(false);
 
@@ -34,16 +36,33 @@ export default function CategoryDetail({
     };
   }, [selectedProduct]);
 
-  // Kategoriya o'zgarganda mahsulotlarni tanlab olish
+  // Kategoriya o'zgarganda Supabase'dan mahsulotlarni dinamik yuklab olish
   useEffect(() => {
-    if (!category) {
-      setProductsList([]);
-      return;
+    async function fetchProducts() {
+      if (!category) {
+        setProductsList([]);
+        return;
+      }
+
+      setLoading(true);
+      const categoryId = category.id || category.slug;
+
+      // Supabase'dagi 'products' jadvalidan 'category_id' bo'yicha filter qilamiz
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .eq('category_id', categoryId);
+
+      if (error) {
+        console.error("Mahsulotlarni yuklashda xatolik:", error);
+        setProductsList([]);
+      } else {
+        setProductsList(data || []);
+      }
+      setLoading(false);
     }
 
-    const categoryKey = category.slug || category.id;
-    const foundProducts = products[categoryKey] || [];
-    setProductsList(foundProducts);
+    fetchProducts();
   }, [category]);
 
   const handleBackClick = () => {
@@ -63,13 +82,13 @@ export default function CategoryDetail({
   };
 
   const getProductName = (item) => {
-    if (!item || !item.name) return '';
-    return typeof item.name === 'object' ? item.name[currentLang] || item.name.ru || '' : item.name;
+    if (!item) return '';
+    return item[`name_${currentLang}`] || (typeof item.name === 'object' ? item.name[currentLang] || item.name.ru : item.name) || '';
   };
 
   const getProductDescription = (item) => {
     if (!item) return '';
-    const desc = item.description || item.desc;
+    const desc = item[`description_${currentLang}`] || item.description || item.desc;
     if (!desc) {
       return currentLang === 'uz'
         ? 'Tavsif mavjud emas.'
@@ -93,7 +112,7 @@ export default function CategoryDetail({
 
         <div className="modal-img-wrapper">
           <img
-            src={selectedProduct.image}
+            src={selectedProduct.image || selectedProduct.image_url}
             alt={getProductName(selectedProduct)}
             className="modal-img"
           />
@@ -179,9 +198,13 @@ export default function CategoryDetail({
           </div>
         </div>
 
-        {productsList.length === 0 ? (
+        {loading ? (
           <p style={{ textAlign: 'center', color: '#666', fontSize: '18px', marginTop: '40px' }}>
-            Bu kategoriyada hozircha mahsulotlar yo'q.
+            {UI_TEXT.loading[currentLang]}
+          </p>
+        ) : productsList.length === 0 ? (
+          <p style={{ textAlign: 'center', color: '#666', fontSize: '18px', marginTop: '40px' }}>
+            {UI_TEXT.empty[currentLang]}
           </p>
         ) : (
           <div className="products-grid">
@@ -193,7 +216,7 @@ export default function CategoryDetail({
               >
                 <div className="product-img-wrapper">
                   <img
-                    src={item.image}
+                    src={item.image || item.image_url}
                     alt={getProductName(item)}
                     className="product-img"
                   />
